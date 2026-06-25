@@ -11,7 +11,6 @@
 
 import { Component, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { injectQuery } from '@tanstack/angular-query-experimental';
 import { ApiService } from '../../../../core/services/api.service';
 import { MagnitudeRange } from '../../../../core/models/earthquake.model';
@@ -19,7 +18,7 @@ import { MagnitudeRange } from '../../../../core/models/earthquake.model';
 @Component({
   selector: 'app-earthquake-table',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule],
   template: `
     <div class="table-container">
       <div class="table-header">
@@ -27,7 +26,11 @@ import { MagnitudeRange } from '../../../../core/models/earthquake.model';
 
         <!-- Filtros -->
         <div class="filters">
-          <select [(ngModel)]="selectedRange" (ngModelChange)="onFilterChange()" class="filter-select">
+          <select
+            [value]="selectedRange()"
+            (change)="onFilterChange('range', $any($event.target).value)"
+            class="filter-select"
+          >
             <option value="">Todos los rangos</option>
             <option value="micro">Micro (< 2.0)</option>
             <option value="menor">Menor (2.0–3.9)</option>
@@ -37,7 +40,11 @@ import { MagnitudeRange } from '../../../../core/models/earthquake.model';
             <option value="mayor">Mayor (≥ 7.0)</option>
           </select>
 
-          <select [(ngModel)]="selectedOrder" (ngModelChange)="onFilterChange()" class="filter-select">
+          <select
+            [value]="selectedOrder()"
+            (change)="onFilterChange('order', $any($event.target).value)"
+            class="filter-select"
+          >
             <option value="desc">Más reciente primero</option>
             <option value="asc">Más antiguo primero</option>
           </select>
@@ -119,26 +126,25 @@ export class EarthquakeTableComponent {
   readonly currentPage = signal(1);
   readonly pageSize = 20;
 
-  selectedRange = '';
-  selectedOrder = 'desc';
+  // Signals para que TanStack Query los observe directamente en el queryKey
+  readonly selectedRange = signal('');
+  readonly selectedOrder = signal('desc');
 
-  /**
-   * TanStack Query observa el queryKey — cuando cambia page o filtros,
-   * hace refetch automáticamente con los nuevos parámetros.
-   */
   readonly earthquakesQuery = injectQuery(() => ({
-    queryKey: ['earthquakes', this.currentPage(), this.selectedRange, this.selectedOrder],
+    queryKey: ['earthquakes', this.currentPage(), this.selectedRange(), this.selectedOrder()],
     queryFn: () =>
       this.api.getEarthquakes({
         page: this.currentPage(),
         page_size: this.pageSize,
-        magnitude_range: this.selectedRange || undefined,
-        order: this.selectedOrder,
+        magnitude_range: this.selectedRange() || undefined,
+        order: this.selectedOrder(),
       }),
   }));
 
-  onFilterChange(): void {
-    this.currentPage.set(1); // resetear a página 1 al cambiar filtros
+  onFilterChange(field: 'range' | 'order', value: string): void {
+    if (field === 'range') this.selectedRange.set(value);
+    else this.selectedOrder.set(value);
+    this.currentPage.set(1);
   }
 
   prevPage(): void {
