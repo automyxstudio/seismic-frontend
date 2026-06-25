@@ -36,11 +36,12 @@ interface TriggerResult {
 }
 
 import { EarthquakeMapComponent } from './components/earthquake-map/earthquake-map.component';
+import { EarthquakeTableComponent } from './components/earthquake-table/earthquake-table.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, EarthquakeMapComponent],
+  imports: [CommonModule, EarthquakeMapComponent, EarthquakeTableComponent],
   template: `
     <div class="shell">
 
@@ -195,6 +196,12 @@ import { EarthquakeMapComponent } from './components/earthquake-map/earthquake-m
             </div>
 
           </div><!-- /panels-row -->
+
+          <!-- Tabla de historial -->
+          <div class="table-row">
+            <app-earthquake-table />
+          </div>
+
         </div><!-- /right-col -->
       </div><!-- /body -->
     </div><!-- /shell -->
@@ -260,11 +267,18 @@ import { EarthquakeMapComponent } from './components/earthquake-map/earthquake-m
     .map-col { overflow: hidden; border-right: 1px solid #30363d; }
 
     /* ── Columna derecha ─────────────────────── */
-    .right-col { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .right-col {
+      display: grid;
+      grid-template-rows: 82px 1fr 220px;
+      min-height: 0; overflow: hidden;
+    }
+
+    /* ── Tabla historial ─────────────────────── */
+    .table-row { min-height: 0; overflow: hidden; border-top: 1px solid #30363d; display: flex; flex-direction: column; }
+    .table-row app-earthquake-table { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 
     /* ── Stats strip ─────────────────────────── */
     .stats-strip {
-      flex-shrink: 0;
       display: flex; align-items: center;
       padding: 0 1rem; height: 82px;
       background: #161b22; border-bottom: 1px solid #30363d; gap: 0;
