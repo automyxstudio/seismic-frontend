@@ -77,6 +77,27 @@ export class ApiService {
   }
 
   /**
+   * Genera un sismo sintético y lo inyecta en el pipeline completo (Mongo + Redis → WebSocket).
+   */
+  async simulateEarthquake(): Promise<any> {
+    return firstValueFrom(
+      this.http.post<any>(`${this.base}/earthquakes/simulate`, {})
+    );
+  }
+
+  /**
+   * Dispara la generación de un reporte para la hora actual sin esperar a Airflow.
+   */
+  async triggerReport(): Promise<{ status: string; period: string; total_events: number }> {
+    return firstValueFrom(
+      this.http.post<{ status: string; period: string; total_events: number }>(
+        `${this.base}/reports/trigger`,
+        {}
+      )
+    );
+  }
+
+  /**
    * Retorna el usuario autenticado actual.
    * Llamado en el startup del dashboard para verificar la sesión.
    */
