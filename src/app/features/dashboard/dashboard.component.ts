@@ -17,6 +17,7 @@
 
 import { Component, signal, inject, OnInit, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { injectQuery, injectQueryClient } from '@tanstack/angular-query-experimental';
 import { Router } from '@angular/router';
@@ -35,13 +36,21 @@ interface TriggerResult {
   top_locations: string[];
 }
 
+interface ParquetFile {
+  path: string; year: string; month: string; day: string; hour: string; size_kb: number;
+}
+
+interface ExportResult {
+  period: string; rows_exported: number; parquet_path: string | null; size_kb: number; message: string;
+}
+
 import { EarthquakeMapComponent } from './components/earthquake-map/earthquake-map.component';
 import { EarthquakeTableComponent } from './components/earthquake-table/earthquake-table.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, EarthquakeMapComponent, EarthquakeTableComponent],
+  imports: [CommonModule, FormsModule, EarthquakeMapComponent, EarthquakeTableComponent],
   template: `
     <div class="shell">
 
@@ -60,9 +69,94 @@ import { EarthquakeTableComponent } from './components/earthquake-table/earthqua
           <button class="btn btn-blue" [disabled]="simulateLoading()" (click)="simulateEarthquake()">
             {{ simulateLoading() ? '...' : '⚡ Simular' }}
           </button>
+          <button class="btn btn-purple" (click)="analyticsOpen.set(true)">📊 Analítica</button>
           <button class="btn btn-ghost" (click)="logout()">Salir</button>
         </div>
       </header>
+
+      <!-- ── Drawer de analítica (Nivel 4) ─────────────────────── -->
+      @if (analyticsOpen()) {
+        <div class="drawer-overlay" (click)="analyticsOpen.set(false)"></div>
+        <div class="drawer">
+          <div class="drawer-hdr">
+            <span class="drawer-title">📊 Capa Analítica — Nivel 4</span>
+            <button class="btn btn-ghost btn-sm" (click)="analyticsOpen.set(false)">✕</button>
+          </div>
+          <div class="drawer-body">
+
+            <!-- Exportar a Parquet -->
+            <section class="drawer-section">
+              <div class="ds-title">Exportar a Parquet</div>
+              <div class="ds-desc">Exporta los eventos de la última hora al data lake analítico (compresión Snappy, particionado Hive year/month/day).</div>
+              <div class="ds-row">
+                <label class="ds-label">Horas atrás</label>
+                <select class="filter-select" [(ngModel)]="exportHours">
+                  <option [value]="1">Última hora</option>
+                  <option [value]="3">Últimas 3h</option>
+                  <option [value]="6">Últimas 6h</option>
+                  <option [value]="24">Últimas 24h</option>
+                </select>
+                <button class="btn btn-indigo" [disabled]="exportLoading()" (click)="exportParquet()">
+                  {{ exportLoading() ? '⏳' : '⬇ Exportar' }}
+                </button>
+              </div>
+              @if (exportResult()) {
+                <div class="export-result">
+                  <span class="er-badge">✓ {{ exportResult()!.rows_exported }} filas</span>
+                  <span class="er-path">{{ exportResult()!.parquet_path ?? 'Sin datos' }}</span>
+                  @if (exportResult()!.size_kb) {
+                    <span class="er-size">{{ exportResult()!.size_kb }} KB</span>
+                  }
+                </div>
+              }
+            </section>
+
+            <!-- Dataset ML -->
+            <section class="drawer-section">
+              <div class="ds-title">Dataset para Machine Learning</div>
+              <div class="ds-desc">Features: magnitude, magnitude_range_encoded, hour_of_day, depth_category, lat_grid, lon_grid, is_significant.</div>
+              <div class="ds-row">
+                <label class="ds-label">Ventana</label>
+                <select class="filter-select" [(ngModel)]="mlDays">
+                  <option [value]="1">1 día</option>
+                  <option [value]="7">7 días</option>
+                  <option [value]="30">30 días</option>
+                  <option [value]="90">90 días</option>
+                </select>
+                <button class="btn btn-blue" [disabled]="mlLoading()" (click)="downloadMlDataset()">
+                  {{ mlLoading() ? '⏳' : '⬇ CSV' }}
+                </button>
+              </div>
+            </section>
+
+            <!-- Archivos Parquet del data lake -->
+            <section class="drawer-section">
+              <div class="ds-title-row">
+                <span class="ds-title">Data Lake — Archivos Parquet</span>
+                <button class="btn btn-ghost btn-sm" (click)="loadParquetFiles()">↺ Actualizar</button>
+              </div>
+              @if (parquetFiles()) {
+                <div class="pq-meta">
+                  {{ parquetFiles()!.total_files }} archivos · {{ parquetFiles()!.total_size_kb }} KB total
+                  <span class="pq-scheme">{{ parquetFiles()!.partition_scheme }}</span>
+                </div>
+                @if (parquetFiles()!.files.length === 0) {
+                  <div class="empty">Sin archivos — exporta primero.</div>
+                }
+                @for (f of parquetFiles()!.files; track f.path) {
+                  <div class="pq-row">
+                    <span class="pq-path">{{ f.path }}</span>
+                    <span class="pq-kb">{{ f.size_kb }} KB</span>
+                  </div>
+                }
+              } @else {
+                <div class="empty">Pulsa ↺ para cargar.</div>
+              }
+            </section>
+
+          </div>
+        </div>
+      }
 
       <!-- ── Sync toast (efímero, sobre el body) ──────────────── -->
       @if (syncResult()) {
@@ -359,6 +453,62 @@ import { EarthquakeTableComponent } from './components/earthquake-table/earthqua
     .rp-total  { font-size: .78rem; font-weight: 600; }
     .rp-stats  { font-size: .72rem; color: #8b949e; }
     .rp-locs   { font-size: .68rem; color: #8b949e; }
+
+    /* Botón analytics */
+    .btn-purple { background: #2a1a4a; border-color: #a371f7; color: #a371f7; }
+    .btn-purple:hover:not(:disabled) { background: #a371f7; color: #0d1117; }
+
+    /* ── Drawer analítica ────────────────────────────────────── */
+    .drawer-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100;
+      animation: fadein .2s ease;
+    }
+    .drawer {
+      position: fixed; top: 0; right: 0; bottom: 0; width: 420px;
+      background: #161b22; border-left: 1px solid #30363d;
+      z-index: 101; display: flex; flex-direction: column;
+      animation: slidein .22s ease;
+      overflow: hidden;
+    }
+    @keyframes fadein  { from{opacity:0} to{opacity:1} }
+    @keyframes slidein { from{transform:translateX(100%)} to{transform:translateX(0)} }
+
+    .drawer-hdr {
+      flex-shrink: 0;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: .85rem 1.1rem; border-bottom: 1px solid #30363d;
+      background: #0d1117;
+    }
+    .drawer-title { font-weight: 700; font-size: .95rem; }
+    .drawer-body { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+
+    .drawer-section {
+      background: #0d1117; border: 1px solid #21262d; border-radius: 8px;
+      padding: .85rem 1rem; display: flex; flex-direction: column; gap: .55rem;
+    }
+    .ds-title { font-size: .82rem; font-weight: 700; color: #a371f7; }
+    .ds-title-row { display: flex; justify-content: space-between; align-items: center; }
+    .ds-desc { font-size: .72rem; color: #8b949e; line-height: 1.4; }
+    .ds-label { font-size: .75rem; color: #8b949e; }
+    .ds-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+    .ds-row .filter-select { flex: 1; min-width: 110px; }
+
+    .export-result {
+      background: #0d2318; border: 1px solid #238636; border-radius: 6px;
+      padding: .45rem .65rem; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+    }
+    .er-badge { background: #238636; color: #fff; padding: .1rem .4rem; border-radius: 8px; font-size: .7rem; font-weight: 600; }
+    .er-path { font-size: .68rem; color: #8b949e; font-family: monospace; flex: 1; word-break: break-all; }
+    .er-size { font-size: .7rem; color: #3fb950; flex-shrink: 0; }
+
+    .pq-meta { font-size: .72rem; color: #8b949e; display: flex; flex-direction: column; gap: .2rem; }
+    .pq-scheme { font-family: monospace; font-size: .68rem; color: #a371f7; }
+    .pq-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: .3rem .5rem; background: #161b22; border-radius: 5px; font-size: .72rem;
+    }
+    .pq-path { font-family: monospace; color: #8b949e; }
+    .pq-kb { color: #58a6ff; flex-shrink: 0; }
   `],
 })
 export class DashboardComponent implements OnInit {
@@ -376,6 +526,15 @@ export class DashboardComponent implements OnInit {
   readonly triggerLoading = signal(false);
   readonly lastTriggerResult = signal<TriggerResult | null>(null);
   readonly triggerErrorMsg = signal('');
+
+  // Analítica — Nivel 4
+  readonly analyticsOpen = signal(false);
+  readonly exportLoading = signal(false);
+  readonly exportResult = signal<ExportResult | null>(null);
+  readonly mlLoading = signal(false);
+  readonly parquetFiles = signal<{ total_files: number; total_size_kb: number; partition_scheme: string; files: ParquetFile[] } | null>(null);
+  exportHours = 1;
+  mlDays = 7;
 
   readonly metricsQuery = injectQuery(() => ({
     queryKey: ['metrics', 24],
@@ -450,6 +609,46 @@ export class DashboardComponent implements OnInit {
       this.triggerErrorMsg.set(detail);
     } finally {
       this.triggerLoading.set(false);
+    }
+  }
+
+  async exportParquet(): Promise<void> {
+    this.exportLoading.set(true);
+    this.exportResult.set(null);
+    try {
+      const result = await this.api.exportParquet(this.exportHours);
+      this.exportResult.set(result);
+      await this.loadParquetFiles();
+    } catch (err) {
+      console.error('[Analytics] export error:', err);
+    } finally {
+      this.exportLoading.set(false);
+    }
+  }
+
+  async downloadMlDataset(): Promise<void> {
+    this.mlLoading.set(true);
+    try {
+      const blob = await this.api.downloadMlDataset(this.mlDays);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `seismic_ml_${this.mlDays}d.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('[Analytics] download error:', err);
+    } finally {
+      this.mlLoading.set(false);
+    }
+  }
+
+  async loadParquetFiles(): Promise<void> {
+    try {
+      const result = await this.api.getParquetFiles();
+      this.parquetFiles.set(result);
+    } catch (err) {
+      console.error('[Analytics] parquet files error:', err);
     }
   }
 

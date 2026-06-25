@@ -108,10 +108,31 @@ export class ApiService {
     );
   }
 
-  /**
-   * Retorna el usuario autenticado actual.
-   * Llamado en el startup del dashboard para verificar la sesión.
-   */
+  async exportParquet(hoursAgo = 1): Promise<{
+    status: string; period: string; rows_exported: number;
+    parquet_path: string | null; size_kb: number; message: string;
+  }> {
+    return firstValueFrom(
+      this.http.get<any>(`${this.base}/analytics/export`, { params: { hours_ago: String(hoursAgo) } })
+    );
+  }
+
+  async getParquetFiles(): Promise<{
+    total_files: number; total_size_kb: number; partition_scheme: string;
+    files: { path: string; year: string; month: string; day: string; hour: string; size_kb: number }[];
+  }> {
+    return firstValueFrom(this.http.get<any>(`${this.base}/analytics/parquet-files`));
+  }
+
+  async downloadMlDataset(days = 7): Promise<Blob> {
+    return firstValueFrom(
+      this.http.get(`${this.base}/analytics/ml-dataset`, {
+        params: { days: String(days), format: 'csv' },
+        responseType: 'blob',
+      })
+    );
+  }
+
   async getMe(): Promise<User> {
     return firstValueFrom(this.http.get<User>(`${this.base}/auth/me`));
   }
