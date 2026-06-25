@@ -88,12 +88,16 @@ export class ApiService {
   /**
    * Dispara la generación de un reporte para la hora actual sin esperar a Airflow.
    */
-  async triggerReport(): Promise<{ status: string; period: string; total_events: number }> {
+  async triggerReport(): Promise<{
+    status: string;
+    period: string;
+    total_events: number;
+    avg_magnitude: number;
+    max_magnitude: number;
+    top_locations: string[];
+  }> {
     return firstValueFrom(
-      this.http.post<{ status: string; period: string; total_events: number }>(
-        `${this.base}/reports/trigger`,
-        {}
-      )
+      this.http.post<any>(`${this.base}/reports/trigger`, {})
     );
   }
 

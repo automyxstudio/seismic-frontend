@@ -24,7 +24,16 @@ import { Router } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { SeismicWsService } from '../../core/services/seismic-ws.service';
-import { Earthquake, HourlyReport } from '../../core/models/earthquake.model';
+import { Earthquake } from '../../core/models/earthquake.model';
+
+interface TriggerResult {
+  status: string;
+  period: string;
+  total_events: number;
+  avg_magnitude: number;
+  max_magnitude: number;
+  top_locations: string[];
+}
 
 import { EarthquakeMapComponent } from './components/earthquake-map/earthquake-map.component';
 import { MetricsCardsComponent } from './components/metrics-cards/metrics-cards.component';
@@ -99,25 +108,53 @@ import { EarthquakeTableComponent } from './components/earthquake-table/earthqua
             </div>
           </section>
 
-          <!-- Reportes generados por Airflow -->
+          <!-- Reportes generados por Airflow / trigger manual -->
           <section class="panel">
             <div class="panel-header">
-              <h2 class="panel-title">Reportes Hourly (Airflow)</h2>
+              <h2 class="panel-title">Reportes Horarios</h2>
               <button
                 class="btn-trigger"
                 [disabled]="triggerLoading()"
                 (click)="triggerReport()"
               >
-                {{ triggerLoading() ? 'Generando...' : '▶ Generar Reporte' }}
+                {{ triggerLoading() ? '⏳ Generando...' : '▶ Generar Reporte' }}
               </button>
             </div>
 
-            @if (triggerMsg()) {
-              <div class="trigger-msg" [class.trigger-error]="triggerIsError()">
-                {{ triggerMsg() }}
+            <!-- Resultado del último reporte generado manualmente -->
+            @if (lastTriggerResult()) {
+              <div class="trigger-result">
+                <div class="tr-header">
+                  <span class="tr-badge">✓ Reporte generado</span>
+                  <span class="tr-period">{{ lastTriggerResult()!.period | date:'dd/MM/yyyy HH:mm' }}</span>
+                </div>
+                <div class="tr-stats">
+                  <div class="tr-stat">
+                    <span class="tr-stat-val">{{ lastTriggerResult()!.total_events }}</span>
+                    <span class="tr-stat-lbl">eventos</span>
+                  </div>
+                  <div class="tr-stat">
+                    <span class="tr-stat-val">M{{ lastTriggerResult()!.avg_magnitude }}</span>
+                    <span class="tr-stat-lbl">magnitud media</span>
+                  </div>
+                  <div class="tr-stat">
+                    <span class="tr-stat-val">M{{ lastTriggerResult()!.max_magnitude }}</span>
+                    <span class="tr-stat-lbl">máximo</span>
+                  </div>
+                </div>
+                @if (lastTriggerResult()!.top_locations?.length) {
+                  <div class="tr-locations">
+                    📍 {{ lastTriggerResult()!.top_locations.join(' · ') }}
+                  </div>
+                }
               </div>
             }
 
+            @if (triggerErrorMsg()) {
+              <div class="trigger-err">✗ {{ triggerErrorMsg() }}</div>
+            }
+
+            <!-- Histórico de reportes previos -->
             @if (reportsQuery.isPending()) {
               <div class="loading">Cargando reportes...</div>
             } @else if (reportsQuery.isError()) {
@@ -217,11 +254,21 @@ import { EarthquakeTableComponent } from './components/earthquake-table/earthqua
     .btn-trigger:hover:not(:disabled) { background: #2ea043; }
     .btn-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    .trigger-msg {
-      padding: 0.5rem 0.75rem; border-radius: 6px;
-      background: #1c2a1c; color: #3fb950; font-size: 0.82rem;
+    .trigger-result {
+      background: #0d2318; border: 1px solid #238636; border-radius: 8px;
+      padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.6rem;
+      animation: fadeIn 0.3s ease;
     }
-    .trigger-msg.trigger-error { background: #2a1c1c; color: #e94560; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .tr-header { display: flex; justify-content: space-between; align-items: center; }
+    .tr-badge { background: #238636; color: #fff; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.78rem; font-weight: 600; }
+    .tr-period { font-size: 0.8rem; color: #8b949e; }
+    .tr-stats { display: flex; gap: 1.5rem; }
+    .tr-stat { display: flex; flex-direction: column; align-items: center; }
+    .tr-stat-val { font-size: 1.3rem; font-weight: 700; color: #3fb950; }
+    .tr-stat-lbl { font-size: 0.7rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; }
+    .tr-locations { font-size: 0.78rem; color: #8b949e; border-top: 1px solid #1e3a2e; padding-top: 0.4rem; }
+    .trigger-err { padding: 0.5rem 0.75rem; border-radius: 6px; background: #2a1c1c; color: #e94560; font-size: 0.82rem; }
 
     .reports-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto; }
     .report-card {
@@ -254,8 +301,8 @@ export class DashboardComponent implements OnInit {
   readonly liveEvents = signal<Earthquake[]>([]);
   readonly simulateLoading = signal(false);
   readonly triggerLoading = signal(false);
-  readonly triggerMsg = signal('');
-  readonly triggerIsError = signal(false);
+  readonly lastTriggerResult = signal<TriggerResult | null>(null);
+  readonly triggerErrorMsg = signal('');
 
   readonly metricsQuery = injectQuery(() => ({
     queryKey: ['metrics', 24],
@@ -299,19 +346,15 @@ export class DashboardComponent implements OnInit {
 
   async triggerReport(): Promise<void> {
     this.triggerLoading.set(true);
-    this.triggerMsg.set('');
-    this.triggerIsError.set(false);
+    this.lastTriggerResult.set(null);
+    this.triggerErrorMsg.set('');
     try {
       const result = await this.api.triggerReport();
-      this.triggerMsg.set(
-        `✓ Reporte generado — ${result.total_events} eventos en ${new Date(result.period).toLocaleTimeString()}`
-      );
-      // Refrescar la lista de reportes sin recargar la página
+      this.lastTriggerResult.set(result as TriggerResult);
       await this.queryClient.invalidateQueries({ queryKey: ['reports'] });
     } catch (err: any) {
-      this.triggerIsError.set(true);
       const detail = err?.error?.detail ?? 'Error generando reporte';
-      this.triggerMsg.set(`✗ ${detail}`);
+      this.triggerErrorMsg.set(detail);
     } finally {
       this.triggerLoading.set(false);
     }
