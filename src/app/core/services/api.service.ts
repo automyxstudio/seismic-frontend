@@ -77,6 +77,13 @@ export class ApiService {
   }
 
   /**
+   * Dispara un ciclo de ingesta manual desde USGS: fetch → transform → upsert → métricas.
+   */
+  async syncFromUsgs(): Promise<{ fetched: number; valid: number; new: number; already_stored: number; message?: string }> {
+    return firstValueFrom(this.http.post<any>(`${this.base}/earthquakes/sync`, {}));
+  }
+
+  /**
    * Genera un sismo sintético y lo inyecta en el pipeline completo (Mongo + Redis → WebSocket).
    */
   async simulateEarthquake(): Promise<any> {

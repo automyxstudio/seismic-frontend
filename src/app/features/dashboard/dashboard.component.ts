@@ -59,6 +59,14 @@ import { EarthquakeTableComponent } from './components/earthquake-table/earthqua
         <div class="header-right">
           <span class="user-info">{{ authService.currentUser()?.username ?? 'admin' }}</span>
           <button
+            class="btn-sync"
+            [disabled]="syncLoading()"
+            (click)="syncUsgs()"
+            title="Descarga los últimos sismos de USGS ahora"
+          >
+            {{ syncLoading() ? '⏳ Sincronizando...' : '🔄 Sincronizar USGS' }}
+          </button>
+          <button
             class="btn-simulate"
             [disabled]="simulateLoading()"
             (click)="simulateEarthquake()"
@@ -69,6 +77,16 @@ import { EarthquakeTableComponent } from './components/earthquake-table/earthqua
           <button (click)="logout()" class="btn-logout">Cerrar sesión</button>
         </div>
       </header>
+
+      @if (syncResult()) {
+        <div class="sync-toast" [class.sync-toast-warn]="syncResult()!.new === 0">
+          @if (syncResult()!.new > 0) {
+            ✓ USGS sync — <strong>{{ syncResult()!.new }} nuevos</strong> de {{ syncResult()!.fetched }} eventos descargados
+          } @else {
+            ✓ USGS sync — todo al día ({{ syncResult()!.fetched }} eventos ya almacenados)
+          }
+        </div>
+      }
 
       <main class="dashboard-content">
 
@@ -208,6 +226,14 @@ import { EarthquakeTableComponent } from './components/earthquake-table/earthqua
 
     .header-right { display: flex; align-items: center; gap: 1rem; }
     .user-info { color: #8b949e; font-size: 0.9rem; }
+    .btn-sync { background: #1f3358; border: 1px solid #7c8cf8; color: #7c8cf8; padding: 0.4rem 0.9rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    .btn-sync:hover:not(:disabled) { background: #7c8cf8; color: #0d1117; }
+    .btn-sync:disabled { opacity: 0.5; cursor: not-allowed; }
+    .sync-toast {
+      background: #0d2318; border-bottom: 2px solid #238636; color: #3fb950;
+      padding: 0.5rem 2rem; font-size: 0.85rem; animation: fadeIn 0.25s ease;
+    }
+    .sync-toast.sync-toast-warn { background: #1a1f0d; border-color: #6e7a00; color: #b5c100; }
     .btn-simulate { background: #1f3a5f; border: 1px solid #58a6ff; color: #58a6ff; padding: 0.4rem 0.9rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
     .btn-simulate:hover:not(:disabled) { background: #58a6ff; color: #0d1117; }
     .btn-simulate:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -299,6 +325,8 @@ export class DashboardComponent implements OnInit {
   private queryClient = injectQueryClient();
 
   readonly liveEvents = signal<Earthquake[]>([]);
+  readonly syncLoading = signal(false);
+  readonly syncResult = signal<{ fetched: number; new: number; already_stored: number } | null>(null);
   readonly simulateLoading = signal(false);
   readonly triggerLoading = signal(false);
   readonly lastTriggerResult = signal<TriggerResult | null>(null);
@@ -330,6 +358,24 @@ export class DashboardComponent implements OnInit {
         },
         error: (err) => console.error('[Dashboard] WebSocket error:', err),
       });
+  }
+
+  async syncUsgs(): Promise<void> {
+    this.syncLoading.set(true);
+    this.syncResult.set(null);
+    try {
+      const result = await this.api.syncFromUsgs();
+      this.syncResult.set(result);
+      // Si llegaron eventos nuevos, refrescar la tabla y las métricas
+      if (result.new > 0) {
+        await this.queryClient.invalidateQueries({ queryKey: ['earthquakes'] });
+        await this.queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      }
+    } catch (err) {
+      console.error('[Dashboard] sync error:', err);
+    } finally {
+      this.syncLoading.set(false);
+    }
   }
 
   async simulateEarthquake(): Promise<void> {
