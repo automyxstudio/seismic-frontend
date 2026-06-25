@@ -46,11 +46,19 @@ export class EarthquakeMapComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.map = L.map(this.mapContainer.nativeElement).setView([20, 0], 2);
+    this.map = L.map(this.mapContainer.nativeElement, {
+      worldCopyJump: true,
+    }).setView([20, 0], 2);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
+      maxZoom: 18,
     }).addTo(this.map);
+
+    // Fuerza a Leaflet a recalcular el tamaño real del contenedor después
+    // de que Angular termina de renderizar el DOM. Sin esto los tiles quedan
+    // desplazados porque Leaflet lee el tamaño antes de que el layout esté listo.
+    setTimeout(() => this.map.invalidateSize(), 200);
   }
 
   ngOnDestroy(): void {
