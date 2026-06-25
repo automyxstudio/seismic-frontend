@@ -111,6 +111,7 @@ import { MagnitudeRange } from '../../../../core/models/earthquake.model';
     .filter-select { background: #21262d; border: 1px solid #30363d; color: #e6edf3; padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.85rem; }
     .table-scroll { flex: 1; overflow-y: auto; min-height: 0; }
     .eq-table { width: 100%; border-collapse: collapse; }
+    .eq-table thead th { position: sticky; top: 0; z-index: 1; background: #161b22; }
     .eq-table th { padding: 0.75rem 1.5rem; text-align: left; font-size: 0.75rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #30363d; }
     .eq-table td { padding: 0.75rem 1.5rem; border-bottom: 1px solid #21262d; font-size: 0.875rem; }
     .eq-table tr:hover td { background: rgba(255,255,255,0.02); }

@@ -269,7 +269,7 @@ import { EarthquakeTableComponent } from './components/earthquake-table/earthqua
     /* ── Columna derecha ─────────────────────── */
     .right-col {
       display: grid;
-      grid-template-rows: 82px 1fr 220px;
+      grid-template-rows: 82px 1fr 280px;
       min-height: 0; overflow: hidden;
     }
 
